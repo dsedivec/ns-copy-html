@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018  Dale Sedivec
 
 ;; Author: Dale Sedivec <dale@codefu.org>
-;; Version: 1.1
+;; Version: 1.2
 ;; Package-Requires: ((htmlize "1.34") (emacs "24"))
 ;; URL: https://github.com/dsedivec/ns-copy-html
 
@@ -32,6 +32,16 @@
 ;;; Code:
 
 (require 'htmlize)
+
+(defgroup ns-copy-html nil
+  "Copy text to macOS clipboard as HTML."
+  :group 'environment
+  :prefix "ns-copy-html-")
+
+(defcustom ns-copy-html-suppressed-faces
+  '(flyspell-incorrect flyspell-duplicate whitespace-line)
+  "List of faces that should not be included in the HTML we generate."
+  :type '(repeat face))
 
 (defconst ns-copy-html-pbcopyhtml-source
   "import AppKit
@@ -77,6 +87,19 @@ pb.setData(text, forType: NSPasteboard.PasteboardType.string)
                   (delete-file temp-file))
                 output)))))
 
+(defun ns-copy-html--htmlize-region (start end)
+  "htmlize the region from START to END."
+  (let ((htmlize-face-overrides
+         (seq-reduce (lambda (overrides face)
+                       ;; OVERRIDES must come last in this nconc call
+                       ;; or else we'll modify ;;
+                       ;; `htmlize-face-overrides', which would be
+                       ;; bad.
+                       (nconc (list face '(:inherit nil)) overrides))
+                     ns-copy-html-suppressed-faces
+                     htmlize-face-overrides)))
+    (htmlize-region-for-paste start end)))
+
 ;;;###autoload
 (defun ns-copy-html-region (start end)
   "Put HTML version of buffer between START and END on macOS clipboard."
@@ -84,7 +107,7 @@ pb.setData(text, forType: NSPasteboard.PasteboardType.string)
   (let* ((pbcopyhtml (ns-copy-html--find-pbcopyhtml))
          (src-buf (current-buffer))
          (proc-out-buf (get-buffer-create "*pbcopyhtml*"))
-         (html (htmlize-region-for-paste start end)))
+         (html (ns-copy-html--htmlize-region start end)))
     (with-temp-buffer
       (insert (format "%d\n" (string-bytes html))
               html)
