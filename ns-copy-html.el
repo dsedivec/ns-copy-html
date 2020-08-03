@@ -2,8 +2,8 @@
 ;; Copyright (C) 2018  Dale Sedivec
 
 ;; Author: Dale Sedivec <dale@codefu.org>
-;; Version: 1.2
-;; Package-Requires: ((htmlize "1.34") (emacs "24"))
+;; Version: 1.3
+;; Package-Requires: ((htmlize "1.34") (emacs "25.1"))
 ;; URL: https://github.com/dsedivec/ns-copy-html
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -43,79 +43,51 @@
   "List of faces that should not be included in the HTML we generate."
   :type '(repeat face))
 
-(defconst ns-copy-html-pbcopyhtml-source
-  "import AppKit
-let INIT_READ = 12
-let stdin = FileHandle.standardInput
-let firstChunk = stdin.readData(ofLength: INIT_READ)
-let newlineIdx: Int = firstChunk.firstIndex(of: 0xA)!
-let htmlSize: Int = Int(String(data: firstChunk.prefix(upTo: newlineIdx),
-                               encoding: .ascii)!)!
-var html = firstChunk.advanced(by: newlineIdx + 1)
-html.append(stdin.readData(ofLength: htmlSize - html.count))
-let text = stdin.readDataToEndOfFile()
-let pb = NSPasteboard.general
-pb.clearContents()
-pb.setData(html, forType: NSPasteboard.PasteboardType.html)
-pb.setData(text, forType: NSPasteboard.PasteboardType.string)
-")
-
-(defvar ns-copy-html-pbcopyhtml nil)
-
-(defun ns-copy-html--find-pbcopyhtml ()
-  "Find the \"pbcopyhtml\" binary, or else try to compile one."
-  (if ns-copy-html-pbcopyhtml
-      ns-copy-html-pbcopyhtml
-    (setq ns-copy-html-pbcopyhtml
-          (or (let ((exec-path (cons user-emacs-directory exec-path)))
-                (executable-find "pbcopyhtml"))
-              (let ((output (expand-file-name "pbcopyhtml"
-                                              user-emacs-directory))
-                    (temp-file (make-temp-file "pbcopyhtml" nil ".swift")))
-                (unwind-protect
-                     (progn
-                       (with-temp-file temp-file
-                         (insert ns-copy-html-pbcopyhtml-source))
-                       (with-temp-buffer
-                         (message "Compiling pbcopyhtml...")
-                         (unless (zerop (call-process "swiftc" nil t nil
-                                                      temp-file "-o" output))
-                           (error "Failed to build pbcopyhtml: %s"
-                                  (buffer-substring-no-properties
-                                   (point-min) (point-max))))
-                         (message "Compiling pbcopyhtml... done.")))
-                  (delete-file temp-file))
-                output)))))
-
-(defun ns-copy-html--htmlize-region (start end)
-  "htmlize the region from START to END."
-  (let ((htmlize-face-overrides
-         (seq-reduce (lambda (overrides face)
-                       ;; OVERRIDES must come last in this nconc call
-                       ;; or else we'll modify ;;
-                       ;; `htmlize-face-overrides', which would be
-                       ;; bad.
-                       (nconc (list face '(:inherit nil)) overrides))
-                     ns-copy-html-suppressed-faces
-                     htmlize-face-overrides)))
-    (htmlize-region-for-paste start end)))
-
 ;;;###autoload
 (defun ns-copy-html-region (start end)
   "Put HTML version of buffer between START and END on macOS clipboard."
   (interactive "r")
-  (let* ((pbcopyhtml (ns-copy-html--find-pbcopyhtml))
-         (src-buf (current-buffer))
-         (proc-out-buf (get-buffer-create "*pbcopyhtml*"))
-         (html (ns-copy-html--htmlize-region start end)))
-    (with-temp-buffer
-      (insert (format "%d\n" (string-bytes html))
-              html)
-      (insert-buffer-substring src-buf start end)
-      (unless (zerop (call-process-region (point-min) (point-max)
-                                          pbcopyhtml nil proc-out-buf))
-        (error "pbcopyhtml failed"))
-      (message "Copied region to clipboard as HTML and plain text"))))
+  (let* ((htmlize-face-overrides
+          (seq-reduce (lambda (overrides face)
+                        ;; OVERRIDES must come last in this nconc call
+                        ;; or else we'll modify
+                        ;; `htmlize-face-overrides', which would be
+                        ;; bad.
+                        (nconc (list face '(:inherit nil)) overrides))
+                      ns-copy-html-suppressed-faces
+                      htmlize-face-overrides))
+         (htmlize-output-type 'inline-css)
+         ;; `htmlize-region' will gladly capture the background color
+         ;; of the active region if you let it.
+         (html-buffer (save-mark-and-excursion
+                        (deactivate-mark)
+                        (htmlize-region start end)))
+         utf8-start)
+    (unwind-protect
+         (progn
+           (with-current-buffer html-buffer
+             ;; Convert the buffer to hex.
+             (call-process-region nil nil "hexdump" t t nil
+                                  "-ve" "1/1 \"%.2x\"")
+             ;; Now start turning the result into an AppleScript
+             ;; script.  This is not insane, not at all.
+             (goto-char 0)
+             ;; "HTML" really has to be upper case here, at least in
+             ;; the "data" literal.
+             (insert "set the clipboard to {«class HTML»:«data HTML")
+             (goto-char (point-max))
+             (insert "», «class utf8»:\"")
+             (setq utf8-start (point)))
+           (append-to-buffer html-buffer start end)
+           (with-current-buffer html-buffer
+             (goto-char utf8-start)
+             (while (re-search-forward "\\([\"\\\\]\\)" nil t)
+               (replace-match "\\\\\\1"))
+             (goto-char (point-max))
+             (insert "\"}\n")
+             (call-process-region nil nil "osascript")))
+      (kill-buffer html-buffer))
+    (message "Copied region to clipboard as HTML and plain text")))
 
 (provide 'ns-copy-html)
 ;;; ns-copy-html.el ends here
