@@ -68,8 +68,10 @@
            (with-current-buffer html-buffer
              ;; Convert the buffer to hex.
              (goto-char (point-min))
-             (while (re-search-forward "[[:ascii:][:nonascii:]]" nil t)
-               (replace-match (format "%02x" (aref (match-string 0) 0))))
+             (while (not (eobp))
+               (insert (format "%02x" (prog1
+                                          (char-after (point))
+                                        (delete-char 1)))))
              ;; Now start turning the result into an AppleScript
              ;; script.  This is not insane, not at all.
              (goto-char 0)
