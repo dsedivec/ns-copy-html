@@ -2,7 +2,7 @@
 ;; Copyright (C) 2018  Dale Sedivec
 
 ;; Author: Dale Sedivec <dale@codefu.org>
-;; Version: 1.3
+;; Version: 1.4
 ;; Package-Requires: ((htmlize "1.34") (emacs "25.1"))
 ;; URL: https://github.com/dsedivec/ns-copy-html
 
@@ -62,8 +62,9 @@
          (progn
            (with-current-buffer html-buffer
              ;; Convert the buffer to hex.
-             (call-process-region nil nil "hexdump" t t nil
-                                  "-ve" "1/1 \"%.2x\"")
+             (goto-char (point-min))
+             (while (re-search-forward "[[:ascii:][:nonascii:]]" nil t)
+               (replace-match (format "%02x" (aref (match-string 0) 0))))
              ;; Now start turning the result into an AppleScript
              ;; script.  This is not insane, not at all.
              (goto-char 0)
@@ -80,7 +81,9 @@
                (replace-match "\\\\\\1"))
              (goto-char (point-max))
              (insert "\"}\n")
-             (call-process-region nil nil "osascript")))
+             (if (fboundp 'ns-do-applescript)
+                 (ns-do-applescript (buffer-string))
+               (call-process-region nil nil "osascript"))))
       (kill-buffer html-buffer))
     (message "Copied region to clipboard as HTML and plain text")))
 
