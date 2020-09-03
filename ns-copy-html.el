@@ -52,6 +52,11 @@
                       ns-copy-html-suppressed-faces
                       htmlize-face-overrides))
          (htmlize-output-type 'inline-css)
+         (htmlize-html-charset nil)
+         ;; This allows me to blissfully ignore most encoding issues.
+         ;; If you have a non-Unicode character in your buffer, this
+         ;; will presumably just error out.
+         (htmlize-convert-nonascii-to-entities t)
          ;; `htmlize-region' will gladly capture the background color
          ;; of the active region if you let it.
          (html-buffer (save-mark-and-excursion
