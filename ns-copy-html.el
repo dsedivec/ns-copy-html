@@ -22,12 +22,7 @@
 ;;; Commentary:
 
 ;; Use `ns-copy-html-region' to copy the region to the macOS clipboard
-;; as both HTML and plain text.  Requires pbcopyhtml, the source for
-;; which is short and given below in `ns-copy-html-pbcopyhtml-source'.
-;; We will try to compile for you with swiftc if pbcopyhtml cannot be
-;; found on your path or in `user-emacs-directory'.
-
-;; What a friggin' hack job.
+;; as both HTML and plain text.
 
 ;;; Code:
 
